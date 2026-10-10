@@ -3,7 +3,7 @@ from transformers import AutoTokenizer
 from peft import AutoPeftModelForCausalLM
 from trl import SFTTrainer, SFTConfig
 
-MODEL_PATH = "models/domain_adapter"
+MODEL_PATH = "models/specialized_adapter"
 
 model = AutoPeftModelForCausalLM.from_pretrained(
     MODEL_PATH,
@@ -11,7 +11,6 @@ model = AutoPeftModelForCausalLM.from_pretrained(
 )
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
-# Ensure the tokenizer has a pad token assigned to avoid collation alignment issues
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -23,7 +22,6 @@ data = load_dataset(
     }
 )
 
-# FIXED: Combine into a single "text" field with a clear boundary string
 def format_example(example):
     text_sequence = (
         "You are a university IT support assistant. "
@@ -31,16 +29,15 @@ def format_example(example):
         "If the requested fact is not available, say that it is not specified rather than inventing it. "
         "Keep the answer concise.\n\n"
         "User: " + example["prompt"] + "\n\n"
-        "Assistant: " + example["completion"] # This exact string "Assistant: " anchors the loss mask
+        "Assistant: " + example["completion"]
     )
     return {"text": text_sequence}
 
-# Map and clean out the legacy unformatted columns
 data = data.map(format_example, remove_columns=["prompt", "completion"])
 
 config = SFTConfig(
     output_dir="models/specialized_adapter_v2",
-    num_train_epochs=1, # 1 epoch is perfect for preventing memorization!
+    num_train_epochs=1,
     per_device_train_batch_size=2,
     per_device_eval_batch_size=2,
     learning_rate=5e-5,
@@ -48,8 +45,8 @@ config = SFTConfig(
     eval_strategy="epoch",
     save_strategy="epoch",
     max_length=256,
-    dataset_text_field="text", # Explicitly tell SFTConfig where your text is
-    completion_only_loss=True, 
+    dataset_text_field="text",
+    completion_only_loss=True,
     report_to="none",
 )
 
@@ -59,8 +56,6 @@ trainer = SFTTrainer(
     train_dataset=data["train"],
     eval_dataset=data["validation"],
     processing_class=tokenizer,
-    # Note: TRL's SFTConfig with completion_only_loss=True automatically configures
-    # the DataCollatorForCompletionOnlyLM parsing under the hood using standard formatting templates.
 )
 
 trainer.train()
